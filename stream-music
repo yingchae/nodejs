@@ -1,0 +1,81 @@
+const express = require('express');
+const mysql = require('mysql2');
+const bodyParser = require('body-parser');
+const dotenv = require('dotenv');
+const jwt = require('jsonwebtoken');
+
+dotenv.config();
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(bodyParser.json());
+
+// Kết nối MySQL
+const db = mysql.createConnection({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 3306,
+    ssl: { rejectUnauthorized: false } // Hỗ trợ Railway
+});
+
+db.connect(err => {
+    if (err) {
+        console.error('Lỗi kết nối MySQL:', err);
+        return;
+    }
+    console.log('Đã kết nối MySQL');
+});
+
+// Middleware xác thực
+const authenticate = (req, res, next) => {
+    const token = req.header('Authorization');
+    if (!token) return res.status(401).json({ message: 'Unauthorized' });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(403).json({ message: 'Invalid token' });
+    }
+};
+
+// Đăng nhập admin
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
+        const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token });
+    } else {
+        res.status(401).json({ message: 'Invalid credentials' });
+    }
+});
+
+// API kiểm tra trạng thái stream
+app.get('/status', authenticate, (req, res) => {
+    db.query('SELECT * FROM stream_logs ORDER BY timestamp DESC LIMIT 10', (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json(results);
+    });
+});
+
+// API điều khiển stream (start/stop)
+app.post('/stream', authenticate, (req, res) => {
+    const { action } = req.body;
+    if (action === 'start') {
+        // Code để bắt đầu stream
+        res.json({ message: 'Streaming started' });
+    } else if (action === 'stop') {
+        // Code để dừng stream
+        res.json({ message: 'Streaming stopped' });
+    } else {
+        res.status(400).json({ message: 'Invalid action' });
+    }
+});
+
+app.listen(port, () => {
+    console.log(`Server đang chạy trên cổng ${port}`);
+});
